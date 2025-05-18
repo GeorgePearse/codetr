@@ -171,8 +171,13 @@ def remap_checkpoint_keys(state_dict: Dict) -> Dict:
         
         # First check for the structure in the HF model
         if key.startswith('backbone.'):
-            # The model might have nested 'backbone.backbone.' structure
-            new_key = key.replace('backbone.', '')
+            # Check for nested backbone structure
+            if 'patch_embed.proj.' in key:
+                # Map patch embedding properly 
+                new_key = key.replace('patch_embed.proj.', 'patch_embed.')
+            else:
+                # The model might have nested 'backbone.backbone.' structure
+                new_key = key.replace('backbone.', '')
             
         # Check if we have a flattened state dict with underscores
         elif '_' in key and not key.startswith(('backbone.', 'neck.', 'transformer.', 'bbox_head.', 'mask_head.')):

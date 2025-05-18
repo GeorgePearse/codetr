@@ -17,11 +17,21 @@ Co-DINO-Inst with ViT-L backbone (LSJ, LVIS)
 ## Pre-trained Weights
 Pre-trained weights are available at:
 - LVIS model: https://huggingface.co/zongzhuofan (private repository)
-- COCO instance segmentation model: https://huggingface.co/zongzhuofan/co-detr-vit-large-coco-instance
+- COCO instance segmentation model: https://huggingface.co/zongzhuofan/co-detr-vit-large-coco-instance 
 
 The code is configured to use the COCO instance segmentation model by default: `co_detr_vit_large_coco_instance`.
 
-Note: Some repositories may require HuggingFace authentication.
+### Weight Loading Status
+The implementation supports loading pre-trained weights, but there are key differences in structure between the official weights and this implementation. Current status:
+- MaskIoUHead structure has been aligned to match the pre-trained weights
+- Key remapping is implemented to translate between different naming formats
+- Some architectural differences remain that cause parameter shape mismatches
+- The model can run with random initialization even if weight loading is partial
+
+To use pre-trained weights, simply run the test script which will attempt to map as many weights as possible and fall back to random initialization for unmatched parameters:
+```bash
+python test_model_loading.py --device cpu
+```
 
 ## Installation
 
