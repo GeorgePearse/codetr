@@ -58,6 +58,7 @@ class CoDINOHead(nn.Module):
         self.num_queries = num_queries
         self.hidden_dim = hidden_dim
         self.num_co_heads = num_co_heads
+        self.num_feature_levels = num_feature_levels
         self.dn_number = dn_number
         self.dn_box_noise_scale = dn_box_noise_scale
         self.dn_label_noise_ratio = dn_label_noise_ratio
