@@ -15,10 +15,13 @@ Based on the official implementation at https://github.com/Sense-X/Co-DETR
 Co-DINO-Inst with ViT-L backbone (LSJ, LVIS)
 
 ## Pre-trained Weights
-Pre-trained weights are available at https://huggingface.co/zongzhuofan
-- Key model: `co_dino_inst_vit_l_lsj_lvis.pth`
+Pre-trained weights are available at:
+- LVIS model: https://huggingface.co/zongzhuofan (private repository)
+- COCO instance segmentation model: https://huggingface.co/zongzhuofan/co-detr-vit-large-coco-instance
 
-Note: Accessing these weights requires HuggingFace authentication.
+The code is configured to use the COCO instance segmentation model by default: `co_detr_vit_large_coco_instance`.
+
+Note: Some repositories may require HuggingFace authentication.
 
 ## Installation
 

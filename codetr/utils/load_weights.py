@@ -45,6 +45,23 @@ MODEL_CONFIGS = {
             "mask_num_stages": 4,
             "mask_resolutions": [14, 28, 56, 112],
         }
+    },
+    "co_detr_vit_large_coco_instance": {
+        "repo_id": "zongzhuofan/co-detr-vit-large-coco-instance",
+        "filename": "pytorch_model.pth",
+        "config": {
+            "num_classes": 80,  # COCO classes
+            "hidden_dim": 256,
+            "num_queries": 900,
+            "num_co_heads": 2,
+            "img_size": 1536,
+            "window_size": 24,
+            "num_feature_levels": 5,
+            "enc_layers": 6,
+            "dec_layers": 6,
+            "mask_num_stages": 4,
+            "mask_resolutions": [14, 28, 56, 112],
+        }
     }
 }
 
@@ -108,7 +125,13 @@ def load_pretrained_co_dino_inst(
     if isinstance(checkpoint_path, str):
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=map_location)
-        state_dict = checkpoint.get("model", checkpoint)
+        # Handle different checkpoint formats
+        if "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+        elif "model" in checkpoint:
+            state_dict = checkpoint["model"]
+        else:
+            state_dict = checkpoint
     else:
         # Use an empty state dict if download failed
         print("Creating empty state dict for testing...")

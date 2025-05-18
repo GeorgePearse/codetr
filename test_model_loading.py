@@ -16,8 +16,8 @@ class Config:
     num_classes: int = 1203  # LVIS classes
     
     # Backbone
-    img_size: int = 1536
-    window_size: int = 24
+    img_size: int = 512  # Smaller for testing, use multiple of 32
+    window_size: int = 16
     drop_path_rate: float = 0.4
     use_checkpoint: bool = True
     
@@ -61,7 +61,7 @@ class Config:
 
 def main():
     parser = argparse.ArgumentParser(description="Test Co-DINO-Inst model loading")
-    parser.add_argument("--model-name", default="co_dino_inst_vit_l_lsj_lvis", 
+    parser.add_argument("--model-name", default="co_detr_vit_large_coco_instance", 
                         help="Pre-trained model name")
     parser.add_argument("--strict", action="store_true", 
                         help="Use strict loading (fail on missing/unexpected keys)")
