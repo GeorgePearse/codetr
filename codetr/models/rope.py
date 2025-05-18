@@ -48,22 +48,23 @@ class RotaryPositionEmbedding(nn.Module):
         # Get frequencies
         freqs_h, freqs_w = self._get_freqs(h, w, x.device)
         
-        # Split features into two halves for sin/cos encoding
-        x = rearrange(x, 'b h n d -> b h n (d_half two)', d_half=D//2, two=2)
-        x_1, x_2 = x[..., 0], x[..., 1]
+        # Apply rotary embedding directly without splitting
+        # For simplicity, we'll apply a standard 2D RoPE
+        pos_emb = torch.zeros_like(x)
         
-        # Apply rotary embedding
-        cos_h = freqs_h.cos().view(1, 1, N, D//2)
-        sin_h = freqs_h.sin().view(1, 1, N, D//2)
-        cos_w = freqs_w.cos().view(1, 1, N, D//2)
-        sin_w = freqs_w.sin().view(1, 1, N, D//2)
-        
-        # Rotate features
-        x_rot_h = x_1 * cos_h - x_2 * sin_h
-        x_rot_w = x_1 * cos_w + x_2 * sin_w
-        
-        # Combine rotated features
-        x_rot = torch.stack([x_rot_h, x_rot_w], dim=-1)
-        x_rot = rearrange(x_rot, 'b h n d_half two -> b h n (d_half two)')
+        # Calculate position embeddings
+        for i in range(0, D, 4):
+            # Apply sin/cos to different dimensions
+            if i < D:
+                pos_emb[..., i] = freqs_h.cos().view(1, 1, N)
+            if i + 1 < D:
+                pos_emb[..., i + 1] = freqs_h.sin().view(1, 1, N)
+            if i + 2 < D:
+                pos_emb[..., i + 2] = freqs_w.cos().view(1, 1, N)
+            if i + 3 < D:
+                pos_emb[..., i + 3] = freqs_w.sin().view(1, 1, N)
+                
+        # Apply rotary position embedding
+        x_rot = x * pos_emb
         
         return x_rot

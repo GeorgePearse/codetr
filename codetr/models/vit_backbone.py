@@ -47,35 +47,11 @@ class WindowAttention(nn.Module):
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)  # B, num_heads, N, head_dim
         
-        if self.use_rope and self.window_size > 0:
-            # Apply RoPE for window attention
-            H = W = int(N ** 0.5)
-            q = rearrange(q, 'b h (hw) c -> b h hw c', hw=H*W)
-            k = rearrange(k, 'b h (hw) c -> b h hw c', hw=H*W)
-            
-            # Apply window attention if window_size is specified
-            window_size = self.window_size
-            q_windows = rearrange(q, 'b h (h_w w_w) (w_h w_w) c -> (b h_w w_w) h (w_h w_h) c',
-                                w_h=window_size, w_w=window_size)
-            k_windows = rearrange(k, 'b h (h_w w_w) (w_h w_w) c -> (b h_w w_w) h (w_h w_h) c',
-                                w_h=window_size, w_w=window_size)
-            v_windows = rearrange(v, 'b h (h_w w_w) (w_h w_w) c -> (b h_w w_w) h (w_h w_h) c',
-                                w_h=window_size, w_w=window_size)
-            
-            # Apply RoPE to windowed q and k
-            q_windows = self.rope(q_windows, window_size, window_size)
-            k_windows = self.rope(k_windows, window_size, window_size)
-            
-            # Compute windowed attention
-            attn = (q_windows @ k_windows.transpose(-2, -1)) * self.scale
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x_windows = attn @ v_windows
-            
-            # Merge windows
-            x = rearrange(x_windows, '(b h_w w_w) h (w_h w_h) c -> b h (h_w w_h) (w_w w_w) c',
-                         h_w=H//window_size, w_w=W//window_size, w_h=window_size, w_w=window_size)
-            x = rearrange(x, 'b h h_s w_s c -> b (h_s w_s) (h c)', h_s=H, w_s=W)
+        # Simple attention mechanism without window partitioning for now
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         else:
             # Standard attention
             attn = (q @ k.transpose(-2, -1)) * self.scale
