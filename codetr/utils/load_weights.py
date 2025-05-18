@@ -155,48 +155,95 @@ def remap_checkpoint_keys(state_dict: Dict) -> Dict:
     """
     remapped = {}
     
-    for key, value in state_dict.items():
+    # Filter out EMA keys
+    filtered_keys = [k for k in state_dict.keys() if not k.startswith('ema_')]
+    
+    for key in filtered_keys:
+        value = state_dict[key]
         new_key = key
         
-        # Remap backbone keys
-        if key.startswith("backbone."):
-            # Handle ViT backbone remapping
-            if "patch_embed.proj" in key:
-                new_key = key.replace("patch_embed.proj", "backbone.patch_embed")
-            elif "blocks." in key:
-                new_key = key.replace("blocks.", "backbone.blocks.")
-            elif "norm." in key and "blocks." not in key:
-                new_key = key.replace("norm.", "backbone.norm.")
+        # Check if we have a flattened state dict
+        if '_' in key and not key.startswith(('backbone.', 'neck.', 'transformer.', 'bbox_head.', 'mask_head.')):
+            parts = key.split('_')
+            # Convert flattened keys like backbone_patch_embed_weight to backbone.patch_embed.weight
+            if len(parts) > 1:
+                module_name = parts[0]
+                subparts = parts[1:-1]
+                weight_type = parts[-1]
                 
-        # Remap neck keys
-        elif key.startswith("neck."):
-            # SFP neck remapping
-            if "lateral_convs" in key:
-                new_key = key.replace("lateral_convs.0", "neck.lateral_conv")
-            elif "fpn_convs" in key:
-                # Map FPN convolutions to our SFP structure
-                level_idx = int(key.split(".")[2])
-                if level_idx == 0:  # P3
-                    new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p3_conv")
-                elif level_idx == 1:  # P4
-                    new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p4_conv2")
-                elif level_idx == 2:  # P5
-                    new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p5_conv2")
+                if module_name == 'backbone':
+                    if 'patch' in parts and 'embed' in parts:
+                        new_key = f"backbone.patch_embed.{weight_type}"
+                    elif 'blocks' in parts:
+                        block_idx = parts[parts.index('blocks') + 1]
+                        if 'attn' in parts:
+                            new_key = f"backbone.blocks.{block_idx}.attn"
+                            if 'qkv' in parts:
+                                new_key += f".qkv.{weight_type}"
+                            elif 'proj' in parts:
+                                new_key += f".proj.{weight_type}"
+                            else:
+                                continue
+                        elif 'norm1' in parts:
+                            new_key = f"backbone.blocks.{block_idx}.norm1.{weight_type}"
+                        elif 'norm2' in parts:
+                            new_key = f"backbone.blocks.{block_idx}.norm2.{weight_type}"
+                        elif 'mlp' in parts:
+                            if 'fc1' in parts:
+                                new_key = f"backbone.blocks.{block_idx}.mlp.fc1.{weight_type}"
+                            elif 'fc2' in parts:
+                                new_key = f"backbone.blocks.{block_idx}.mlp.fc2.{weight_type}"
+                            else:
+                                continue
+                        else:
+                            continue
+                    else:
+                        continue
+                else:
+                    continue
+        # Standard keys
+        else:
+            # Remap backbone keys
+            if key.startswith("backbone."):
+                # Handle ViT backbone remapping
+                if "patch_embed.proj" in key:
+                    new_key = key.replace("patch_embed.proj", "backbone.patch_embed")
+                elif "blocks." in key:
+                    new_key = key.replace("blocks.", "backbone.blocks.")
+                elif "norm." in key and "blocks." not in key:
+                    new_key = key.replace("norm.", "backbone.norm.")
                     
-        # Remap transformer keys
-        elif key.startswith("transformer."):
-            # Co-DINO transformer remapping
-            new_key = key.replace("transformer.", "detection_head.transformer.")
-            
-        # Remap detection head keys
-        elif key.startswith("bbox_head."):
-            new_key = key.replace("bbox_head.", "detection_head.")
-            
-        # Remap mask head keys
-        elif key.startswith("mask_head."):
-            new_key = key.replace("mask_head.", "mask_head.")
-            
-        remapped[new_key] = value
+            # Remap neck keys
+            elif key.startswith("neck."):
+                # SFP neck remapping
+                if "lateral_convs" in key:
+                    new_key = key.replace("lateral_convs.0", "neck.lateral_conv")
+                elif "fpn_convs" in key:
+                    # Map FPN convolutions to our SFP structure
+                    level_idx = int(key.split(".")[2])
+                    if level_idx == 0:  # P3
+                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p3_conv")
+                    elif level_idx == 1:  # P4
+                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p4_conv2")
+                    elif level_idx == 2:  # P5
+                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p5_conv2")
+                        
+            # Remap transformer keys
+            elif key.startswith("transformer."):
+                # Co-DINO transformer remapping
+                new_key = key.replace("transformer.", "detection_head.transformer.")
+                
+            # Remap detection head keys
+            elif key.startswith("bbox_head."):
+                new_key = key.replace("bbox_head.", "detection_head.")
+                
+            # Remap mask head keys
+            elif key.startswith("mask_head."):
+                new_key = key.replace("mask_head.", "mask_head.")
+        
+        # Only add keys that we successfully remapped
+        if new_key != key or '_' not in key:
+            remapped[new_key] = value
         
     return remapped
 
@@ -224,17 +271,32 @@ def load_model_with_pretrained_weights(
     
     # Remap keys if needed
     if remap_keys:
-        state_dict = remap_checkpoint_keys(state_dict)
+        print(f"Remapping checkpoint keys for {model_name}...")
+        # Print some stats before remapping
+        print(f"Original state dict has {len(state_dict)} keys")
+        
+        # Apply remapping
+        remapped_state_dict = remap_checkpoint_keys(state_dict)
+        
+        # Print stats after remapping
+        print(f"Remapped state dict has {len(remapped_state_dict)} keys")
+        print(f"Filtered out {len(state_dict) - len(remapped_state_dict)} keys")
+        
+        state_dict = remapped_state_dict
         
     # Load into model
-    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)
-    
-    print(f"Loaded pre-trained weights from {model_name}")
-    if missing_keys:
-        print(f"Missing keys: {len(missing_keys)}")
-        print(f"First 10 missing keys: {missing_keys[:10]}")
-    if unexpected_keys:
-        print(f"Unexpected keys: {len(unexpected_keys)}")
-        print(f"First 10 unexpected keys: {unexpected_keys[:10]}")
+    try:
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=strict)
+        
+        print(f"Loaded pre-trained weights from {model_name}")
+        if missing_keys:
+            print(f"Missing keys: {len(missing_keys)}")
+            print(f"First 10 missing keys: {missing_keys[:10]}")
+        if unexpected_keys:
+            print(f"Unexpected keys: {len(unexpected_keys)}")
+            print(f"First 10 unexpected keys: {unexpected_keys[:10]}")
+    except Exception as e:
+        print(f"Error loading weights: {e}")
+        print("Continuing with random initialization...")
         
     return model
