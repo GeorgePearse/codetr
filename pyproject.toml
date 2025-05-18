@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codetr"
+version = "0.1.0"
+description = "Co-DETR implementation without MMDetection"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.35.0",
+    "lightning>=2.1.0", 
+    "timm>=0.9.12",
+    "tqdm",
+    "pillow",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pycocotools",
+    "psycopg[binary]",
+    "python-dotenv",
+    "einops",
+    "huggingface-hub",
+    "tensorboard",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+strict_optional = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = "ignore::DeprecationWarning"
