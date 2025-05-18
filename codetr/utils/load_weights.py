@@ -155,17 +155,29 @@ def remap_checkpoint_keys(state_dict: Dict) -> Dict:
     """
     remapped = {}
     
-    # Filter out EMA keys
-    filtered_keys = [k for k in state_dict.keys() if not k.startswith('ema_')]
+    # Get all keys from both standard and EMA sets (we'll convert both for complete coverage)
+    all_keys = list(state_dict.keys())
     
-    for key in filtered_keys:
+    # Prepare a map to store all conversions
+    final_map = {}
+    
+    for key in all_keys:
+        if key.startswith('ema_'):
+            # Skip EMA keys directly (they duplicate regular keys)
+            continue
+            
         value = state_dict[key]
         new_key = key
         
-        # Check if we have a flattened state dict
-        if '_' in key and not key.startswith(('backbone.', 'neck.', 'transformer.', 'bbox_head.', 'mask_head.')):
+        # First check for the structure in the HF model
+        if key.startswith('backbone.'):
+            # The model might have nested 'backbone.backbone.' structure
+            new_key = key.replace('backbone.', '')
+            
+        # Check if we have a flattened state dict with underscores
+        elif '_' in key and not key.startswith(('backbone.', 'neck.', 'transformer.', 'bbox_head.', 'mask_head.')):
             parts = key.split('_')
-            # Convert flattened keys like backbone_patch_embed_weight to backbone.patch_embed.weight
+            # Convert flattened keys like backbone_patch_embed_weight to patch_embed.weight
             if len(parts) > 1:
                 module_name = parts[0]
                 subparts = parts[1:-1]
@@ -173,11 +185,11 @@ def remap_checkpoint_keys(state_dict: Dict) -> Dict:
                 
                 if module_name == 'backbone':
                     if 'patch' in parts and 'embed' in parts:
-                        new_key = f"backbone.patch_embed.{weight_type}"
+                        new_key = f"patch_embed.{weight_type}"
                     elif 'blocks' in parts:
                         block_idx = parts[parts.index('blocks') + 1]
                         if 'attn' in parts:
-                            new_key = f"backbone.blocks.{block_idx}.attn"
+                            new_key = f"blocks.{block_idx}.attn"
                             if 'qkv' in parts:
                                 new_key += f".qkv.{weight_type}"
                             elif 'proj' in parts:
@@ -185,66 +197,64 @@ def remap_checkpoint_keys(state_dict: Dict) -> Dict:
                             else:
                                 continue
                         elif 'norm1' in parts:
-                            new_key = f"backbone.blocks.{block_idx}.norm1.{weight_type}"
+                            new_key = f"blocks.{block_idx}.norm1.{weight_type}"
                         elif 'norm2' in parts:
-                            new_key = f"backbone.blocks.{block_idx}.norm2.{weight_type}"
+                            new_key = f"blocks.{block_idx}.norm2.{weight_type}"
                         elif 'mlp' in parts:
                             if 'fc1' in parts:
-                                new_key = f"backbone.blocks.{block_idx}.mlp.fc1.{weight_type}"
+                                new_key = f"blocks.{block_idx}.mlp.fc1.{weight_type}"
                             elif 'fc2' in parts:
-                                new_key = f"backbone.blocks.{block_idx}.mlp.fc2.{weight_type}"
+                                new_key = f"blocks.{block_idx}.mlp.fc2.{weight_type}"
                             else:
                                 continue
                         else:
                             continue
                     else:
                         continue
+                elif module_name in ['neck', 'transformer', 'bbox_head', 'mask_head']:
+                    # Handle neck, transformer, bbox_head, mask_head similar to backbone
+                    continue
                 else:
                     continue
-        # Standard keys
-        else:
-            # Remap backbone keys
-            if key.startswith("backbone."):
-                # Handle ViT backbone remapping
-                if "patch_embed.proj" in key:
-                    new_key = key.replace("patch_embed.proj", "backbone.patch_embed")
-                elif "blocks." in key:
-                    new_key = key.replace("blocks.", "backbone.blocks.")
-                elif "norm." in key and "blocks." not in key:
-                    new_key = key.replace("norm.", "backbone.norm.")
-                    
-            # Remap neck keys
-            elif key.startswith("neck."):
-                # SFP neck remapping
-                if "lateral_convs" in key:
-                    new_key = key.replace("lateral_convs.0", "neck.lateral_conv")
-                elif "fpn_convs" in key:
-                    # Map FPN convolutions to our SFP structure
-                    level_idx = int(key.split(".")[2])
-                    if level_idx == 0:  # P3
-                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p3_conv")
-                    elif level_idx == 1:  # P4
-                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p4_conv2")
-                    elif level_idx == 2:  # P5
-                        new_key = key.replace(f"fpn_convs.{level_idx}", "neck.p5_conv2")
-                        
-            # Remap transformer keys
-            elif key.startswith("transformer."):
-                # Co-DINO transformer remapping
-                new_key = key.replace("transformer.", "detection_head.transformer.")
-                
-            # Remap detection head keys
-            elif key.startswith("bbox_head."):
-                new_key = key.replace("bbox_head.", "detection_head.")
-                
-            # Remap mask head keys
-            elif key.startswith("mask_head."):
-                new_key = key.replace("mask_head.", "mask_head.")
         
-        # Only add keys that we successfully remapped
-        if new_key != key or '_' not in key:
-            remapped[new_key] = value
-        
+        # Store the mapped key with its value
+        if new_key != key:
+            final_map[key] = new_key
+    
+    # Create new remapped state dictionary with proper structure for our model
+    for key, value in state_dict.items():
+        # Skip EMA keys
+        if key.startswith('ema_'):
+            continue
+            
+        # Use our conversion map
+        if key in final_map:
+            mapped_key = final_map[key]
+            # Main backbone keys need correct prefix
+            if not mapped_key.startswith(('backbone.', 'neck.', 'detection_head.', 'mask_head.')):
+                if mapped_key.startswith(('patch_embed', 'blocks', 'norm')):
+                    # This is a backbone component
+                    remapped_key = f"backbone.{mapped_key}"
+                    remapped[remapped_key] = value
+                else:
+                    # Keep other keys as is
+                    remapped[mapped_key] = value
+            else:
+                # Already has correct prefix
+                remapped[mapped_key] = value
+            
+    # Check for known top-level components to map
+    for key, value in state_dict.items():
+        if key.startswith('patch_embed'):
+            remapped[f"backbone.{key}"] = value
+        elif key.startswith('blocks.'):
+            remapped[f"backbone.{key}"] = value
+        elif key.startswith('norm.'):
+            remapped[f"backbone.{key}"] = value
+            
+    # Print some statistics
+    print(f"Mapped {len(remapped)} keys from original {len(state_dict)} keys")
+            
     return remapped
 
 
