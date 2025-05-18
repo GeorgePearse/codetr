@@ -10,7 +10,7 @@ from codetr.models.vit_backbone import build_vit_large_backbone
 from codetr.models.sfp_neck import SFPNeck
 from codetr.models.co_dino_head import CoDINOHead
 from codetr.models.mask_head import SimpleRefineMaskHead, MaskIoUHead
-from codetr.models.position_encoding import build_position_encoding
+from codetr.models.position_encoding import build_position_embedding
 
 
 class CoDINOInst(nn.Module):
@@ -79,7 +79,7 @@ class CoDINOInst(nn.Module):
         )
         
         # Build position encoding
-        self.position_encoding = build_position_encoding(
+        self.position_encoding = build_position_embedding(
             hidden_dim=hidden_dim,
             position_embedding_type='sine',
             temperature=20,
