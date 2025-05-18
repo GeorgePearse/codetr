@@ -298,20 +298,32 @@ class MaskIoUHead(nn.Module):
         self,
         hidden_dim: int = 256,
         mask_dim: int = 256,
-        num_convs: int = 2,
-        num_fc: int = 1,
+        num_convs: int = 4,
+        num_fc: int = 2,
     ):
         super().__init__()
         self.num_convs = num_convs
         self.num_fc = num_fc
         
-        # Convolutional layers
+        # First conv layer takes mask_dim + 1 for the mask prediction
         self.convs = nn.ModuleList()
-        for i in range(num_convs):
-            in_channels = mask_dim if i == 0 else hidden_dim
+        first_in_channels = mask_dim + 1  # Additional channel for mask
+        self.convs.append(
+            ConvBlock(
+                first_in_channels,
+                hidden_dim,
+                kernel_size=3,
+                padding=1,
+                norm_layer=nn.GroupNorm(32, hidden_dim),
+                activation=nn.ReLU(inplace=True),
+            )
+        )
+        
+        # Additional conv layers
+        for i in range(1, num_convs):
             self.convs.append(
                 ConvBlock(
-                    in_channels,
+                    hidden_dim,
                     hidden_dim,
                     kernel_size=3,
                     padding=1,
@@ -321,11 +333,10 @@ class MaskIoUHead(nn.Module):
             )
             
         # Fully connected layers
+        fc_input_dim = hidden_dim * 7 * 7  # Match the pre-trained format 
         self.fcs = nn.ModuleList()
-        for i in range(num_fc):
-            in_features = hidden_dim if i == 0 else hidden_dim
-            out_features = hidden_dim if i < num_fc - 1 else 1
-            self.fcs.append(nn.Linear(in_features, out_features))
+        self.fcs.append(nn.Linear(fc_input_dim, 1024))
+        self.fcs.append(nn.Linear(1024, 1))
             
         self._init_weights()
         
@@ -356,15 +367,13 @@ class MaskIoUHead(nn.Module):
         for conv in self.convs:
             x = conv(x)
             
-        # Global average pooling
-        x = F.adaptive_avg_pool2d(x, (1, 1))
+        # Adaptive pooling to fixed size to match pre-trained weights
+        x = F.adaptive_avg_pool2d(x, (7, 7))
         x = x.flatten(1)
         
         # Fully connected layers
-        for i, fc in enumerate(self.fcs):
-            x = fc(x)
-            if i < len(self.fcs) - 1:
-                x = F.relu(x)
+        x = F.relu(self.fcs[0](x))
+        x = self.fcs[1](x)
                 
         return x.sigmoid()
 
